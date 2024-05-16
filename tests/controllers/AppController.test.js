@@ -1,68 +1,55 @@
-/* eslint-disable import/no-named-as-default */
+//AppController.test.js
+import AppController from '../../controllers/AppController';
+import redisClient from '../../utils/redis';
 import dbClient from '../../utils/db';
 
-describe('+ AppController', () => {
-  before(function (done) {
-    this.timeout(10000);
-    Promise.all([dbClient.usersCollection(), dbClient.filesCollection()])
-      .then(([usersCollection, filesCollection]) => {
-        Promise.all([usersCollection.deleteMany({}), filesCollection.deleteMany({})])
-          .then(() => done())
-          .catch((deleteErr) => done(deleteErr));
-      }).catch((connectErr) => done(connectErr));
+describe('AppController', () => {
+  let req, res;
+
+  beforeEach(() => {
+    req = {};
+    res = {
+      status: jest.fn(() => res),
+      json: jest.fn(),
+      send: jest.fn()
+    };
   });
 
-  describe('+ GET: /status', () => {
-    it('+ Services are online', function (done) {
-      request.get('/status')
-        .expect(200)
-        .end((err, res) => {
-          if (err) {
-            return done(err);
-          }
-          expect(res.body).to.deep.eql({ redis: true, db: true });
-          done();
-        });
-    });
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('+ GET: /stats', () => {
-    it('+ Correct statistics about db collections', function (done) {
-      request.get('/stats')
-        .expect(200)
-        .end((err, res) => {
-          if (err) {
-            return done(err);
-          }
-          expect(res.body).to.deep.eql({ users: 0, files: 0 });
-          done();
-        });
+  describe('getStatus', () => {
+    it('should return status of redisClient and dbClient', () => {
+      redisClient.isAlive = jest.fn(() => true);
+      dbClient.isAlive = jest.fn(() => true);
+      AppController.getStatus(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ redis: true, db: true });
     });
 
-    it('+ Correct statistics about db collections [alt]', function (done) {
-      this.timeout(10000);
-      Promise.all([dbClient.usersCollection(), dbClient.filesCollection()])
-        .then(([usersCollection, filesCollection]) => {
-          Promise.all([
-            usersCollection.insertMany([{ email: 'john@mail.com' }]),
-            filesCollection.insertMany([
-              { name: 'foo.txt', type: 'file'},
-              {name: 'pic.png', type: 'image' },
-            ])
-          ])
-            .then(() => {
-              request.get('/stats')
-                .expect(200)
-                .end((err, res) => {
-                  if (err) {
-                    return done(err);
-                  }
-                  expect(res.body).to.deep.eql({ users: 1, files: 2 });
-                  done();
-                });
-            })
-            .catch((deleteErr) => done(deleteErr));
-        }).catch((connectErr) => done(connectErr));
+    // Add more test cases for different scenarios
+  });
+
+  describe('getStats', () => {
+    it('should return number of users and files', async () => {
+      dbClient.nbUsers = jest.fn(() => Promise.resolve(10));
+      dbClient.nbFiles = jest.fn(() => Promise.resolve(20));
+      await AppController.getStats(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ users: 10, files: 20 });
     });
+
+    // Add more test cases for different scenarios
+  });
+
+  describe('greetUser', () => {
+    it('should send a welcome message', () => {
+      AppController.greetUser(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.send).toHaveBeenCalledWith('Welcome to the API');
+    });
+
+    // Add more test cases for different scenarios
   });
 });

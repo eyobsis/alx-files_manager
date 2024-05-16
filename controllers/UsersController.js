@@ -1,40 +1,35 @@
-/* eslint-disable import/no-named-as-default */
 import sha1 from 'sha1';
-import Queue from 'bull/lib/queue';
 import dbClient from '../utils/db';
+import redisClient from '../utils/redis';
+import userQueue from '../utils/worker';
 
-const userQueue = new Queue('email sending');
+async function postNew(req, res) {
+  const { email, password } = req.body;
 
-export default class UsersController {
-  static async postNew(req, res) {
-    const email = req.body ? req.body.email : null;
-    const password = req.body ? req.body.password : null;
+  console.log(email, password);
+  if (!email) return res.status(400).send('Missing email');
+  if (!password) { return res.status(400).send('Missing password'); }
+  if (await dbClient.findUser({ email })) return res.status(400).send('Already exist');
+  const user = await dbClient.addUsers(email, sha1(password));
 
-    if (!email) {
-      res.status(400).json({ error: 'Missing email' });
-      return;
-    }
-    if (!password) {
-      res.status(400).json({ error: 'Missing password' });
-      return;
-    }
-    const user = await (await dbClient.usersCollection()).findOne({ email });
 
-    if (user) {
-      res.status(400).json({ error: 'Already exist' });
-      return;
-    }
-    const insertionInfo = await (await dbClient.usersCollection())
-      .insertOne({ email, password: sha1(password) });
-    const userId = insertionInfo.insertedId.toString();
-
-    userQueue.add({ userId });
-    res.status(201).json({ email, id: userId });
-  }
-
-  static async getMe(req, res) {
-    const { user } = req;
-
-    res.status(200).json({ email: user.email, id: user._id.toString() });
-  }
+  userQueue.add({ userId: newUser._id });
+  return res.status(201).json({ id: user._id, email: user.email });
 }
+
+async function getMe(req, res) {
+  console.log(req.headers['x-token']);
+  const token = await redisClient.get(`auth_${req.headers['x-token']}`);
+  console.log(token);
+  if (token) {
+    const user = await dbClient.findUser({ _id: token });
+    console.log('getme: ', user);
+    return res.status(204).json({ id: user._id, email: user.email });
+  }
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+
+module.exports = {
+  postNew,
+  getMe,
+};

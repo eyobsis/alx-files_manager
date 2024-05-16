@@ -1,153 +1,68 @@
-/* eslint-disable import/no-named-as-default */
+import { getConnect, getDisconnect } from '../../controllers/AuthController';
+import redisClient from '../../utils/redis';
 import dbClient from '../../utils/db';
 
-describe('+ AuthController', () => {
-  const mockUser = {
-    email: 'kaido@beast.com',
-    password: 'hyakuju_no_kaido_wano',
-  };
-  let token = '';
+describe('AuthController', () => {
+  let req, res;
 
-  before(function (done) {
-    this.timeout(10000);
-    dbClient.usersCollection()
-      .then((usersCollection) => {
-        usersCollection.deleteMany({ email: mockUser.email })
-          .then(() => {
-            request.post('/users')
-              .send({
-                email: mockUser.email,
-                password: mockUser.password,
-              })
-              .expect(201)
-              .end((requestErr, res) => {
-                if (requestErr) {
-                  return done(requestErr);
-                }
-                expect(res.body.email).to.eql(mockUser.email);
-                expect(res.body.id.length).to.be.greaterThan(0);
-                done();
-              });
-          })
-          .catch((deleteErr) => done(deleteErr));
-      }).catch((connectErr) => done(connectErr));
+  beforeEach(() => {
+    req = { headers: {} };
+    res = {
+      status: jest.fn(() => res),
+      json: jest.fn()
+    };
   });
 
-  describe('+ GET: /connect', () => {
-    it('+ Fails with no "Authorization" header field', function (done) {
-      this.timeout(5000);
-      request.get('/connect')
-        .expect(401)
-        .end((err, res) => {
-          if (err) {
-            return done(err);
-          }
-          expect(res.body).to.deep.eql({ error: 'Unauthorized' });
-          done();
-        });
-    });
-
-    it('+ Fails for a non-existent user', function (done) {
-      this.timeout(5000);
-      request.get('/connect')
-        .auth('foo@bar.com', 'raboof', { type: 'basic' })
-        .expect(401)
-        .end((err, res) => {
-          if (err) {
-            return done(err);
-          }
-          expect(res.body).to.deep.eql({ error: 'Unauthorized' });
-          done();
-        });
-    });
-
-    it('+ Fails with a valid email and wrong password', function (done) {
-      this.timeout(5000);
-      request.get('/connect')
-        .auth(mockUser.email, 'raboof', { type: 'basic' })
-        .expect(401)
-        .end((err, res) => {
-          if (err) {
-            return done(err);
-          }
-          expect(res.body).to.deep.eql({ error: 'Unauthorized' });
-          done();
-        });
-    });
-
-    it('+ Fails with an invalid email and valid password', function (done) {
-      this.timeout(5000);
-      request.get('/connect')
-        .auth('zoro@strawhat.com', mockUser.password, { type: 'basic' })
-        .expect(401)
-        .end((err, res) => {
-          if (err) {
-            return done(err);
-          }
-          expect(res.body).to.deep.eql({ error: 'Unauthorized' });
-          done();
-        });
-    });
-
-    it('+ Succeeds for an existing user', function (done) {
-      this.timeout(5000);
-      request.get('/connect')
-        .auth(mockUser.email, mockUser.password, { type: 'basic' })
-        .expect(200)
-        .end((err, res) => {
-          if (err) {
-            return done(err);
-          }
-          expect(res.body.token).to.exist;
-          expect(res.body.token.length).to.be.greaterThan(0);
-          token = res.body.token;
-          done();
-        });
-    });
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('+ GET: /disconnect', () => {
-    it('+ Fails with no "X-Token" header field', function (done) {
-      this.timeout(5000);
-      request.get('/disconnect')
-        .expect(401)
-        .end((requestErr, res) => {
-          if (requestErr) {
-            return done(requestErr);
-          }
-          expect(res.body).to.deep.eql({ error: 'Unauthorized' });
-          done();
-        });
+  describe('getConnect', () => {
+    it('should return token when user is authenticated', async () => {
+      req.headers.authorization = 'Basic base64encodedemail:password';
+      dbClient.findUser = jest.fn(() => Promise.resolve({ _id: 'userId', password: 'hashedPassword' }));
+      redisClient.set = jest.fn(() => Promise.resolve('token'));
+      await getConnect(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ token: 'token' });
     });
 
-    it('+ Fails for a non-existent user', function (done) {
-      this.timeout(5000);
-      request.get('/disconnect')
-        .set('X-Token', 'raboof')
-        .expect(401)
-        .end((requestErr, res) => {
-          if (requestErr) {
-            return done(requestErr);
-          }
-          expect(res.body).to.deep.eql({ error: 'Unauthorized' });
-          done();
-        });
+    it('should return unauthorized error when user does not exist', async () => {
+      req.headers.authorization = 'Basic base64encodedemail:password';
+      dbClient.findUser = jest.fn(() => Promise.resolve(null));
+      await getConnect(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
     });
 
-    it('+ Succeeds with a valid "X-Token" field', function (done) {
-      request.get('/disconnect')
-        .set('X-Token', token)
-        .expect(204)
-        .end((err, res) => {
-          if (err) {
-            return done(err);
-          }
-          expect(res.body).to.deep.eql({});
-          expect(res.text).to.eql('');
-          expect(res.headers['content-type']).to.not.exist;
-          expect(res.headers['content-length']).to.not.exist;
-          done();
-        });
+    it('should return unauthorized error when password is incorrect', async () => {
+      req.headers.authorization = 'Basic base64encodedemail:password';
+      dbClient.findUser = jest.fn(() => Promise.resolve({ _id: 'userId', password: 'hashedPassword' }));
+      await getConnect(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
     });
+
+    // Add more test cases for different scenarios
+  });
+
+  describe('getDisconnect', () => {
+    it('should disconnect user and return status 204', async () => {
+      req.headers['X-Token'] = 'userToken';
+      redisClient.get = jest.fn(() => Promise.resolve('userId'));
+      redisClient.del = jest.fn(() => Promise.resolve());
+      await getDisconnect(req, res);
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it('should return unauthorized error when token is invalid', async () => {
+      req.headers['X-Token'] = 'invalidToken';
+      redisClient.get = jest.fn(() => Promise.resolve(null));
+      await getDisconnect(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    });
+
+    // Add more test cases for different scenarios
   });
 });

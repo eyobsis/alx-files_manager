@@ -16,4 +16,9 @@ export default class AppController {
         res.status(200).json({ users: usersCount, files: filesCount });
       });
   }
+
+  static async greetUser(req, res) {
+    
+    res.status(200).send('Welcome to the API');
+  }
 }
